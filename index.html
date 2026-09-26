@@ -271,7 +271,7 @@ button{
 >
 
 <h1>
-STATUS AUTA v6
+STATUS AUTA v7
 </h1>
 
 <div class="sub">
@@ -334,6 +334,13 @@ Sprawdzanie...
 </div>
 
 </form>
+
+<div id="connectionTest" style="margin-top:18px;padding:12px;border-radius:10px;background:#f5f7fa;font-size:13px;">
+  <div id="connectionStatus">Połączenie z Apps Script: oczekiwanie...</div>
+  <button type="button" id="testConnectionBtn" class="secondary" style="margin-top:10px;width:100%;">
+    TEST POŁĄCZENIA
+  </button>
+</div>
 
 </div>
 
@@ -526,7 +533,7 @@ Zapisywanie zdjęć i danych...
 
 
 const APPS_SCRIPT_URL =
-'https://script.google.com/macros/s/AKfycbxgbqW4JQxsaiRC5rqIhel2x1d8Gs8ZkCrEtB_janRel0-P5AgAMpUKRrVEjU1EsB5-/exec';
+'https://script.google.com/macros/s/AKfycbwT4EsKxASmNz1bZDNmL9AR9MKdUN0ywc8zcH1Ldoc2dqZRNNSdlekTcAG37W4cWesE/exec';
 
 const GITHUB_ORIGIN =
 'https://m4ttwork.github.io';
@@ -624,6 +631,13 @@ window.addEventListener(
         'STATUS AUTA: Bridge gotowy'
       );
 
+      const status = document.getElementById('connectionStatus');
+
+      if (status) {
+        status.textContent =
+          'Bridge gotowy — kanał komunikacji działa.';
+      }
+
       return;
 
     }
@@ -690,6 +704,29 @@ function() {
   console.log(
     'STATUS AUTA: iframe Apps Script załadowany'
   );
+
+  const status = document.getElementById('connectionStatus');
+
+  if (status) {
+    status.textContent =
+      'Iframe Apps Script załadowany. Czekam na Bridge...';
+  }
+
+};
+
+bridge.onerror =
+function() {
+
+  console.error(
+    'STATUS AUTA: błąd ładowania iframe Apps Script'
+  );
+
+  const status = document.getElementById('connectionStatus');
+
+  if (status) {
+    status.textContent =
+      'BŁĄD: nie udało się załadować Apps Script.';
+  }
 
 };
 
@@ -826,6 +863,47 @@ async function callBackend(
 /************************************************************
  * POMOCNICZE
  ************************************************************/
+
+async function testConnection() {
+
+  const status = document.getElementById('connectionStatus');
+
+  if (status) {
+    status.textContent = 'Testuję połączenie z Apps Script...';
+  }
+
+  try {
+
+    const result = await callBackend('ping', {});
+
+    console.log('STATUS AUTA PING:', result);
+
+    if (status) {
+      status.textContent =
+        'POŁĄCZENIE DZIAŁA: ' +
+        (result && result.message
+          ? result.message
+          : 'Apps Script odpowiedział poprawnie.');
+    }
+
+  } catch (error) {
+
+    console.error(
+      'STATUS AUTA: test połączenia nieudany',
+      error
+    );
+
+    if (status) {
+      status.textContent =
+        'BŁĄD POŁĄCZENIA: ' + error.message;
+    }
+  }
+}
+
+
+document.getElementById('testConnectionBtn').onclick =
+  testConnection;
+
 
 const $ =
   id =>
@@ -1670,6 +1748,11 @@ async function(){
 /************************************************************
  * START
  ************************************************************/
+
+setTimeout(function() {
+  testConnection();
+}, 700);
+
 
 async function init(){
 
