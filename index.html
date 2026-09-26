@@ -271,7 +271,7 @@ button{
 >
 
 <h1>
-STATUS AUTA v5
+STATUS AUTA v6
 </h1>
 
 <div class="sub">
@@ -525,42 +525,37 @@ Zapisywanie zdjęć i danych...
 <script>
 
 
-/************************************************************
- * KONFIGURACJA
- ************************************************************/
-
 const APPS_SCRIPT_URL =
-'https://script.google.com/macros/s/AKfycbyGYpSKam2QbB9PoAOzBKAWGHR6QKnK39y77uFoWO9gPXZPh_CpyNxqpdxWrOgbJxob/exec';
-
+'https://script.google.com/macros/s/AKfycbxgbqW4JQxsaiRC5rqIhel2x1d8Gs8ZkCrEtB_janRel0-P5AgAMpUKRrVEjU1EsB5-/exec';
 
 const GITHUB_ORIGIN =
 'https://m4ttwork.github.io';
 
-
-/************************************************************
- * ZMIENNE
- ************************************************************/
-
 const bridge =
-  document.getElementById('bridge');
+document.getElementById('bridge');
 
+
+let bridgeReady = false;
+
+let bridgeReadyPromise;
+
+let bridgeReadyResolve;
 
 let requestSeq = 0;
 
-let pending =
-  new Map();
+let pending = new Map();
 
 
 let token =
-  sessionStorage.getItem(
-    'statusAutaToken'
-  ) || '';
+sessionStorage.getItem(
+  'statusAutaToken'
+) || '';
 
 
 let employee =
-  sessionStorage.getItem(
-    'statusAutaUser'
-  ) || '';
+sessionStorage.getItem(
+  'statusAutaUser'
+) || '';
 
 
 let registrations = [];
@@ -570,17 +565,189 @@ let selectedRegistration = '';
 let files = [];
 
 
-/************************************************************
- * KOMUNIKACJA Z APPS SCRIPT
- ************************************************************/
+/*
+ * Tworzymy Promise oczekujący
+ * na załadowanie Bridge.
+ */
 
-function callBackend(
+bridgeReadyPromise =
+new Promise(function(resolve) {
+
+  bridgeReadyResolve = resolve;
+
+});
+
+
+/*
+ * Odbieramy wiadomości z Apps Script.
+ */
+
+window.addEventListener(
+  'message',
+  function(event) {
+
+    /*
+     * Wiadomość musi pochodzić
+     * z Apps Script.
+     *
+     * Nie sprawdzamy tutaj sztywno
+     * script.google.com, ponieważ Apps Script
+     * może przekierować iframe na
+     * script.googleusercontent.com.
+     */
+
+    const data =
+      event.data;
+
+
+    if (!data) {
+      return;
+    }
+
+
+    /*
+     * Bridge gotowy.
+     */
+
+    if (
+      data.type ===
+      'STATUS_AUTA_READY'
+    ) {
+
+      bridgeReady = true;
+
+      if (bridgeReadyResolve) {
+        bridgeReadyResolve();
+      }
+
+      console.log(
+        'STATUS AUTA: Bridge gotowy'
+      );
+
+      return;
+
+    }
+
+
+    /*
+     * Odpowiedź z backendu.
+     */
+
+    if (
+      data.type !==
+      'STATUS_AUTA_RESPONSE'
+    ) {
+
+      return;
+
+    }
+
+
+    const request =
+      pending.get(
+        data.id
+      );
+
+
+    if (!request) {
+      return;
+    }
+
+
+    pending.delete(
+      data.id
+    );
+
+
+    if (data.ok) {
+
+      request.resolve(
+        data.result
+      );
+
+    } else {
+
+      request.reject(
+        new Error(
+          data.error ||
+          'Błąd Apps Script.'
+        )
+      );
+
+    }
+
+  }
+);
+
+
+/*
+ * Ładujemy Apps Script.
+ */
+
+bridge.onload =
+function() {
+
+  console.log(
+    'STATUS AUTA: iframe Apps Script załadowany'
+  );
+
+};
+
+
+/*
+ * Ustawiamy iframe.
+ */
+
+bridge.src =
+APPS_SCRIPT_URL;
+
+
+/*
+ * Główna funkcja komunikacji.
+ */
+
+async function callBackend(
   action,
   payload = {}
 ) {
 
+  /*
+   * Czekamy maksymalnie 15 sekund
+   * na załadowanie Bridge.
+   */
+
+  if (!bridgeReady) {
+
+    await Promise.race([
+
+      bridgeReadyPromise,
+
+      new Promise(
+        function(_, reject) {
+
+          setTimeout(
+            function() {
+
+              reject(
+                new Error(
+                  'Apps Script nie uruchomił kanału komunikacji.'
+                )
+              );
+
+            },
+            15000
+          );
+
+        }
+      )
+
+    ]);
+
+  }
+
+
   return new Promise(
-    function(resolve,reject){
+    function(resolve, reject) {
 
       const id =
         'r' +
@@ -590,22 +757,23 @@ function callBackend(
       pending.set(
         id,
         {
-          resolve:resolve,
-          reject:reject
+          resolve: resolve,
+          reject: reject
         }
       );
 
 
+      console.log(
+        'STATUS AUTA → Apps Script:',
+        action
+      );
+
+
       /*
-       * Wysyłamy do iframe.
-       *
-       * "*" jest tutaj celowe:
-       * Apps Script może używać
-       * script.google.com / script.googleusercontent.com.
+       * Wysyłamy żądanie do Bridge.
        */
 
       bridge.contentWindow.postMessage(
-
         {
           type:
             'STATUS_AUTA_REQUEST',
@@ -619,24 +787,27 @@ function callBackend(
           payload:
             payload
         },
-
         '*'
-
       );
 
 
-      setTimeout(
-        function(){
+      /*
+       * Timeout żądania.
+       */
 
-          if(
+      setTimeout(
+        function() {
+
+          if (
             pending.has(id)
-          ){
+          ) {
 
             pending.delete(id);
 
             reject(
               new Error(
-                'Przekroczono czas oczekiwania.'
+                'Apps Script nie odpowiedział na żądanie: ' +
+                action
               )
             );
 
@@ -650,96 +821,6 @@ function callBackend(
   );
 
 }
-
-
-/************************************************************
- * ODBIÓR Z APPS SCRIPT
- ************************************************************/
-
-window.addEventListener(
-  'message',
-  function(event){
-
-    /*
-     * Akceptujemy tylko naszą stronę.
-     */
-
-    if(
-      event.origin !==
-      GITHUB_ORIGIN
-    ){
-
-      return;
-
-    }
-
-
-    if(
-      !event.data
-    ){
-
-      return;
-
-    }
-
-
-    if(
-      event.data.type !==
-      'STATUS_AUTA_RESPONSE'
-    ){
-
-      return;
-
-    }
-
-
-    const id =
-      event.data.id;
-
-
-    const request =
-      pending.get(id);
-
-
-    if(!request){
-
-      return;
-
-    }
-
-
-    pending.delete(id);
-
-
-    if(
-      event.data.ok
-    ){
-
-      request.resolve(
-        event.data.result
-      );
-
-    }else{
-
-      request.reject(
-        new Error(
-          event.data.error ||
-          'Błąd serwera.'
-        )
-      );
-
-    }
-
-  }
-);
-
-
-/************************************************************
- * URUCHAMIAMY BRIDGE
- ************************************************************/
-
-bridge.src =
-  APPS_SCRIPT_URL;
 
 
 /************************************************************
